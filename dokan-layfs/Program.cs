@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DokanNet;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,6 +11,8 @@ namespace dokan_layfs
     {
         static void Main(string[] args)
         {
+            var fs = new LayeredFileSystem(@"D:\tmp\layfs\read", @"D:\tmp\layfs\write");
+            fs.Mount("p:\\", DokanOptions.DebugMode, 3);
         }
     }
 }
