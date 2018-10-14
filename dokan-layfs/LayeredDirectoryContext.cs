@@ -11,11 +11,15 @@ namespace dokan_layfs
 {
     class LayeredDirectoryContext : LayeredContext
     {
-        public bool IsWritable
+        public override bool IsWritable
         {
             get
             {
                 return WriteDirInfo != null;
+            }
+            set
+            {
+
             }
         }
 

@@ -20,6 +20,10 @@ namespace dokan_layfs
             _isDirectory = isDirectory;
         }
 
+        public override bool IsWritable {
+            get => false;
+            set { } }
+
         public override void Delete()
         {
             throw new NotImplementedException();

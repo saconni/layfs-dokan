@@ -11,7 +11,8 @@ namespace dokan_layfs
 {
     class LayeredFileContext : LayeredContext
     {
-        public bool IsWritable { get; set; } = false;
+        public override bool IsWritable { get; set; } = false;
+
         public FileStream Stream = null;
 
         public LayeredFileContext(string fileName) : base(fileName)

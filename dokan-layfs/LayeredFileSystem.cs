@@ -22,7 +22,7 @@ namespace dokan_layfs
         private const FileAccess DataAccess = FileAccess.ReadData | FileAccess.WriteData | FileAccess.AppendData |
                                               FileAccess.Execute |
                                               FileAccess.GenericExecute | FileAccess.GenericWrite |
-                                              FileAccess.GenericRead;
+                                              FileAccess.GenericRead | FileAccess.Delete;
 
         private const FileAccess DataWriteAccess = FileAccess.WriteData | FileAccess.AppendData |
                                                    FileAccess.Delete |
@@ -314,15 +314,18 @@ namespace dokan_layfs
 
         public NtStatus DeleteFile(string fileName, DokanFileInfo info)
         {
-            LayeredFileContext context = info.Context as LayeredFileContext;
+            return DokanResult.Success;
+            /*
+            LayeredContext context = info.Context as LayeredContext;
             if (!context.IsWritable)
             {
                 return DokanResult.AccessDenied;
             }
             else
             {
-                return DokanResult.Success;
+                return DokanResult.Success;  
             }
+            */
         }
 
         public NtStatus FindFiles(string fileName, out IList<FileInformation> files, DokanFileInfo info)
