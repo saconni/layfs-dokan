@@ -17,6 +17,7 @@ namespace dokan_layfs
     {
         private string _readOnlyPath = default(string);
         private string _writePath = default(string);
+        private string _volumeLabel = default(string);
 
         private const FileAccess DataAccess = FileAccess.ReadData | FileAccess.WriteData | FileAccess.AppendData |
                                               FileAccess.Execute |
@@ -54,17 +55,19 @@ namespace dokan_layfs
             return _writePath + fileName;
         }
 
-        public LayeredFileSystem(string readOnlyPath, string writePath)
+        public LayeredFileSystem(string readOnlyPath, string writePath, string volumeLabel)
         {
             _readOnlyPath = NormalizePath(readOnlyPath);
             _writePath = NormalizePath(writePath);
+            _volumeLabel = volumeLabel;
         }
 
         public NtStatus CreateFile(string fileName, DokanNet.FileAccess access, FileShare share, FileMode mode, FileOptions options, FileAttributes attributes, DokanFileInfo info)
         {
             try
             {
-                return UnsafeCreateFile(fileName, access, share, mode, options, attributes, info);
+                var ret = UnsafeCreateFile(fileName, access, share, mode, options, attributes, info);
+                return ret;
             }
             catch (UnauthorizedAccessException) // don't have access rights
             {
@@ -78,7 +81,6 @@ namespace dokan_layfs
 
                 return DokanResult.PathNotFound;
             }
-            /*
             catch (Exception ex)
             {
                 (info.Context as LayeredContext)?.Dispose();
@@ -92,7 +94,6 @@ namespace dokan_layfs
                         throw;
                 }
             }
-            */
         }
 
         public NtStatus UnsafeCreateFile(string fileName, DokanNet.FileAccess access, FileShare share, FileMode mode, FileOptions options, FileAttributes attributes, DokanFileInfo info)
@@ -228,13 +229,22 @@ namespace dokan_layfs
                             return DokanResult.FileExists;
                         break;
 
+                    case FileMode.Create:
+                        writeable = true;
+                        break;
+
                     case FileMode.Truncate:
                         if (!pathExists)
                             return DokanResult.FileNotFound;
                         break;
 
-                    default:
+                    case FileMode.OpenOrCreate:
+                        if (!pathExists)
+                            writeable = true;
                         break;
+
+                    default:
+                        throw new Exception($"Unhandled FileMode {mode.ToString("g")}");
                 }
 
                 LayeredFileContext context = new LayeredFileContext(fileName);
@@ -269,16 +279,14 @@ namespace dokan_layfs
                 if (info.DeleteOnClose)
                 {
                     context.Delete();
+                    context.Dispose();
                 }
-                context.Dispose();
-                info.Context = null;
             }
         }
 
         public void CloseFile(string fileName, DokanFileInfo info)
         {
             (info.Context as LayeredContext)?.Dispose();
-            info.Context = null;
         }
 
         public NtStatus DeleteDirectory(string fileName, DokanFileInfo info)
@@ -373,7 +381,7 @@ namespace dokan_layfs
         {
             try
             {
-                (info.Context as LayeredFileContext)?.Stream.Flush();
+                (info.Context as LayeredFileContext)?.Stream.Flush(true);
                 return DokanResult.Success;
             }
             catch (IOException)
@@ -395,14 +403,15 @@ namespace dokan_layfs
         {
             LayeredContext context = info.Context as LayeredContext;
 
-            if(context != null)
+            if(context == null)
             {
-                fileInfo = context.GetFileInformation();
-                fileInfo.FileName = Path.GetFileName(fileName);
-                return DokanResult.Success;
+                fileInfo = new FileInformation();
+                return DokanResult.InvalidHandle;
             }
 
-            throw new Exception("whoaaa");
+            fileInfo = context.GetFileInformation();
+            fileInfo.FileName = Path.GetFileName(fileName);
+            return DokanResult.Success;
         }
 
         public NtStatus GetFileSecurity(string fileName, out FileSystemSecurity security, AccessControlSections sections, DokanFileInfo info)
@@ -413,23 +422,23 @@ namespace dokan_layfs
 
             if (context != null)
             {
-                try
-                {
-                    security = context.GetFileSystemSecurity();
-                    return DokanResult.Success;
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    return DokanResult.AccessDenied;
-                }
+                return DokanResult.InvalidHandle;
             }
 
-            throw new Exception("whoaaa");
+            try
+            {
+                security = context.GetFileSystemSecurity();
+                return DokanResult.Success;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return DokanResult.AccessDenied;
+            }
         }
 
         public NtStatus GetVolumeInformation(out string volumeLabel, out FileSystemFeatures features, out string fileSystemName, out uint maximumComponentLength, DokanFileInfo info)
         {
-            volumeLabel = "DOKAN";
+            volumeLabel = _volumeLabel;
             fileSystemName = "NTFS";
             maximumComponentLength = 256;
 
@@ -489,10 +498,24 @@ namespace dokan_layfs
 
         public NtStatus ReadFile(string fileName, byte[] buffer, out int bytesRead, long offset, DokanFileInfo info)
         {
-            var stream = (info.Context as LayeredFileContext).Stream;
+            bytesRead = 0;
 
+            if (info.Context == null)
+            {
+                return DokanResult.InvalidHandle;
+            }
+
+            var stream = (info.Context as LayeredFileContext).Stream;
             stream.Seek(offset, SeekOrigin.Begin);
-            bytesRead = stream.Read(buffer, 0, buffer.Length);
+
+            try
+            {
+                bytesRead = stream.Read(buffer, 0, buffer.Length);
+            }
+            catch (Exception)
+            {
+                return DokanResult.Unsuccessful;
+            }
 
             return DokanResult.Success;
         }
@@ -603,6 +626,7 @@ namespace dokan_layfs
                 MakeWriteable(context);
                 context.Stream.Position = offset;
                 context.Stream.Write(buffer, 0, buffer.Length);
+                bytesWritten = buffer.Length;
                 return DokanResult.Success;
             }
             catch(IOException)
