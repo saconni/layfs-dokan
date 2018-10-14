@@ -171,6 +171,7 @@ namespace dokan_layfs
                 var writeable = false;
                 var pathExists = false;
                 var pathIsDirectory = Directory.Exists(writePath);
+                string realPath;
 
                 if (pathIsDirectory)
                 {
@@ -219,6 +220,11 @@ namespace dokan_layfs
 
                                 // call it again, with the IsDirectory set to true
                                 return CreateFile(fileName, access, share, mode, options, attributes, info);
+                            }
+                            else if(readWriteAttributes)
+                            {
+                                info.Context = new LayeredReadAttributesContext(fileName, writeable ? writePath : readOnlyPath, pathIsDirectory);
+                                return DokanResult.Success;
                             }
                         }
                         break;
@@ -408,10 +414,12 @@ namespace dokan_layfs
                 fileInfo = new FileInformation();
                 return DokanResult.InvalidHandle;
             }
-
-            fileInfo = context.GetFileInformation();
-            fileInfo.FileName = Path.GetFileName(fileName);
-            return DokanResult.Success;
+            else
+            {
+                fileInfo = context.GetFileInformation();
+                fileInfo.FileName = Path.GetFileName(fileName);
+                return DokanResult.Success;
+            }
         }
 
         public NtStatus GetFileSecurity(string fileName, out FileSystemSecurity security, AccessControlSections sections, DokanFileInfo info)
