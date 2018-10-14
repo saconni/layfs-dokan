@@ -107,6 +107,12 @@ namespace dokan_layfs
 
                 try
                 {
+                    Console.WriteLine($"Initializing LayFs:\n" +
+                        $"    Mount Point:     {MountPoint}\n" +
+                        $"    Read-Only Path:  {ReadOnlyPath}\n" + 
+                        $"    Write Path:      {WritePath}\n" +
+                        $"\nCTRL-C to exit\n");
+                        
                     fs.Mount(MountPoint, opt, ThreadCount, DebugMode ? null : new DokanNet.Logging.NullLogger());
                 }
                 catch (DllNotFoundException ex)
