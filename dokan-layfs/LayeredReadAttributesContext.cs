@@ -68,7 +68,8 @@ namespace dokan_layfs
 
         public override void SetAttributes(FileAttributes attributes)
         {
-            throw new NotImplementedException();
+            if (attributes != 0)
+                File.SetAttributes(_realPath, attributes);
         }
 
         public override void SetFileSystemSecurity(FileSystemSecurity security)

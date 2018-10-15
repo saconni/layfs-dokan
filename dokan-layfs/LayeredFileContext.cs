@@ -25,12 +25,16 @@ namespace dokan_layfs
             if(Stream != null)
             {
                 Stream.Dispose();
+                Stream = null;
             }
         }
 
         public override void Delete()
         {
-            Utils.SetFileDisposition(Stream, true);
+            if(IsWritable)
+            {
+                Utils.SetFileDisposition(Stream, true);
+            }
         }
 
         public override FileInformation GetFileInformation()

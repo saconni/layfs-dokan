@@ -6,9 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
-using System.Text;
-using System.Threading.Tasks;
-using static DokanNet.FormatProviders;
 using FileAccess = DokanNet.FileAccess;
 
 namespace dokan_layfs
@@ -19,13 +16,13 @@ namespace dokan_layfs
         private string _writePath = default(string);
         private string _volumeLabel = default(string);
 
-        private const FileAccess DataAccess = FileAccess.ReadData | FileAccess.WriteData | FileAccess.AppendData |
-                                              FileAccess.Execute |
-                                              FileAccess.GenericExecute | FileAccess.GenericWrite |
-                                              FileAccess.GenericRead | FileAccess.Delete;
+        private const FileAccess ReadAttributes = FileAccess.ReadData | FileAccess.WriteData | FileAccess.AppendData |
+                                                  FileAccess.Execute | FileAccess.WriteAttributes |
+                                                  FileAccess.GenericExecute | FileAccess.GenericWrite |
+                                                  FileAccess.GenericRead | FileAccess.Delete;
 
         private const FileAccess DataWriteAccess = FileAccess.WriteData | FileAccess.AppendData |
-                                                   FileAccess.Delete |
+                                                   FileAccess.Delete | FileAccess.WriteAttributes |
                                                    FileAccess.GenericWrite;
 
         private static string NormalizePath(string path)
@@ -171,7 +168,6 @@ namespace dokan_layfs
                 var writeable = false;
                 var pathExists = false;
                 var pathIsDirectory = Directory.Exists(writePath);
-                string realPath;
 
                 if (pathIsDirectory)
                 {
@@ -195,7 +191,7 @@ namespace dokan_layfs
                     }
                 }
 
-                var readWriteAttributes = (access & DataAccess) == 0;
+                var readAttributes = (access & ReadAttributes) == 0;
                 var readAccess = (access & DataWriteAccess) == 0;
 
                 switch (mode)
@@ -221,7 +217,7 @@ namespace dokan_layfs
                                 // call it again, with the IsDirectory set to true
                                 return CreateFile(fileName, access, share, mode, options, attributes, info);
                             }
-                            else if(readWriteAttributes)
+                            else if(readAttributes)
                             {
                                 info.Context = new LayeredReadAttributesContext(fileName, writeable ? writePath : readOnlyPath, pathIsDirectory);
                                 return DokanResult.Success;
@@ -230,9 +226,13 @@ namespace dokan_layfs
                         break;
 
                     case FileMode.CreateNew:
+                        if(writeable)
+                        {
+                            if(pathExists)
+                                return DokanResult.FileExists;
+                        }
                         writeable = true;
-                        if (pathExists)
-                            return DokanResult.FileExists;
+                            
                         break;
 
                     case FileMode.Create:
