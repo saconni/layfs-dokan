@@ -431,7 +431,7 @@ namespace dokan_layfs
 
             LayeredContext context = info.Context as LayeredContext;
 
-            if (context != null)
+            if (context == null)
             {
                 return DokanResult.InvalidHandle;
             }
