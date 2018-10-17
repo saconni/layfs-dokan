@@ -11,7 +11,7 @@ namespace dokan_layfs
 {
     abstract class LayeredContext
     {
-        public abstract bool IsWritable { get; set; }
+        public abstract bool IsWritable { get; }
 
         public string FileName { get; private set; }
 

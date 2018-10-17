@@ -17,10 +17,6 @@ namespace dokan_layfs
             {
                 return WriteDirInfo != null;
             }
-            set
-            {
-
-            }
         }
 
         public DirectoryInfo ReadOnlyDirInfo = null;
@@ -46,8 +42,7 @@ namespace dokan_layfs
 
         public override FileInformation GetFileInformation()
         {
-            FileInformation info = new FileInformation();
-            Utils.CreateFileInformationFromFileSystemInfo(WriteDirInfo ?? ReadOnlyDirInfo, out info);
+            FileInformation info = Utils.CreateFileInformation(WriteDirInfo ?? ReadOnlyDirInfo);
             return info;
         }
 

@@ -11,13 +11,24 @@ namespace dokan_layfs
 {
     class LayeredFileContext : LayeredContext
     {
-        public override bool IsWritable { get; set; } = false;
+        public override bool IsWritable
+        {
+            get
+            {
+                return _isWritable;
+            }
+        }
 
         public FileStream Stream = null;
 
-        public LayeredFileContext(string fileName) : base(fileName)
+        private string _realPath;
+        private bool _isWritable;
+
+
+        public LayeredFileContext(string fileName, string realPath, bool isWritable) : base(fileName)
         {
-            
+            _realPath = realPath;
+            _isWritable = isWritable;
         }
 
         public override void Dispose()
@@ -41,7 +52,10 @@ namespace dokan_layfs
         {
             FileInformation info = new FileInformation();
             Utils.CreateFileInformationFromFileStream(Stream, out info);
-            return info;
+
+            var info2 = Utils.CreateFileInformation(new FileInfo(_realPath));
+
+            return info2;
         }
 
         public override FileSystemSecurity GetFileSystemSecurity()
