@@ -6,9 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
-using System.Text;
-using System.Threading.Tasks;
-using static DokanNet.FormatProviders;
 using FileAccess = DokanNet.FileAccess;
 
 namespace dokan_layfs
@@ -19,13 +16,13 @@ namespace dokan_layfs
         private string _writePath = default(string);
         private string _volumeLabel = default(string);
 
-        private const FileAccess DataAccess = FileAccess.ReadData | FileAccess.WriteData | FileAccess.AppendData |
-                                              FileAccess.Execute |
-                                              FileAccess.GenericExecute | FileAccess.GenericWrite |
-                                              FileAccess.GenericRead;
+        private const FileAccess ReadAttributes = FileAccess.ReadData | FileAccess.WriteData | FileAccess.AppendData |
+                                                  FileAccess.Execute | FileAccess.WriteAttributes |
+                                                  FileAccess.GenericExecute | FileAccess.GenericWrite |
+                                                  FileAccess.GenericRead | FileAccess.Delete;
 
         private const FileAccess DataWriteAccess = FileAccess.WriteData | FileAccess.AppendData |
-                                                   FileAccess.Delete |
+                                                   FileAccess.Delete | FileAccess.WriteAttributes |
                                                    FileAccess.GenericWrite;
 
         private static string NormalizePath(string path)
@@ -168,10 +165,9 @@ namespace dokan_layfs
             }
             else
             {
-                var writeable = false;
+                var writable = false;
                 var pathExists = false;
                 var pathIsDirectory = Directory.Exists(writePath);
-                string realPath;
 
                 if (pathIsDirectory)
                 {
@@ -179,7 +175,7 @@ namespace dokan_layfs
                 }
                 else if (File.Exists(writePath))
                 {
-                    writeable = true;
+                    writable = true;
                     pathExists = true;
                 }
                 else
@@ -195,7 +191,7 @@ namespace dokan_layfs
                     }
                 }
 
-                var readWriteAttributes = (access & DataAccess) == 0;
+                var readAttributes = (access & ReadAttributes) == 0;
                 var readAccess = (access & DataWriteAccess) == 0;
 
                 switch (mode)
@@ -219,24 +215,28 @@ namespace dokan_layfs
                                 }
 
                                 // call it again, with the IsDirectory set to true
-                                return CreateFile(fileName, access, share, mode, options, attributes, info);
+                                return UnsafeCreateFile(fileName, access, share, mode, options, attributes, info);
                             }
-                            else if(readWriteAttributes)
+                            else if(readAttributes)
                             {
-                                info.Context = new LayeredReadAttributesContext(fileName, writeable ? writePath : readOnlyPath, pathIsDirectory);
+                                info.Context = new LayeredReadAttributesContext(fileName, writable ? writePath : readOnlyPath, pathIsDirectory);
                                 return DokanResult.Success;
                             }
                         }
                         break;
 
                     case FileMode.CreateNew:
-                        writeable = true;
-                        if (pathExists)
-                            return DokanResult.FileExists;
+                        if(writable)
+                        {
+                            if(pathExists)
+                                return DokanResult.FileExists;
+                        }
+                        writable = true;
+                            
                         break;
 
                     case FileMode.Create:
-                        writeable = true;
+                        writable = true;
                         break;
 
                     case FileMode.Truncate:
@@ -246,26 +246,54 @@ namespace dokan_layfs
 
                     case FileMode.OpenOrCreate:
                         if (!pathExists)
-                            writeable = true;
+                            writable = true;
                         break;
 
                     default:
                         throw new Exception($"Unhandled FileMode {mode.ToString("g")}");
                 }
 
-                LayeredFileContext context = new LayeredFileContext(fileName);
-                info.Context = context;
-
-                if (writeable)
+                if (writable)
                 {
                     var path = Path.GetDirectoryName(writePath);
                     if (!Directory.Exists(path))
                         Directory.CreateDirectory(path);
                 }
+                else if(!readAccess)
+                {
+                    var path = Path.GetDirectoryName(writePath);
+                    if (!Directory.Exists(path))
+                        Directory.CreateDirectory(path);
 
-                context.IsWritable = writeable;
-                context.Stream = new FileStream(writeable ? writePath : readOnlyPath, mode,
-                        readAccess ? System.IO.FileAccess.Read : System.IO.FileAccess.ReadWrite, share, 4096, options);
+                    File.Copy(readOnlyPath, writePath, true);
+
+                    FileInfo finfo = new FileInfo(readOnlyPath);
+                    File.SetCreationTime(writePath, finfo.CreationTime);
+                    File.SetLastAccessTime(writePath, finfo.LastAccessTime);
+                    File.SetLastWriteTime(writePath, finfo.LastWriteTime);
+
+                    writable = true;
+                }
+
+                LayeredFileContext context = new LayeredFileContext(fileName, writable ? writePath : readOnlyPath, writable);
+                info.Context = context;
+
+                try
+                {
+                    context.Stream = new FileStream(writable ? writePath : readOnlyPath, mode,
+                            readAccess ? System.IO.FileAccess.Read : System.IO.FileAccess.ReadWrite, share, 4096, options);
+                }
+                catch (Exception ex)
+                {
+                    var hr = (uint)Marshal.GetHRForException(ex);
+                    switch (hr)
+                    {
+                        case 0x80070020: //Sharing violation
+                            return DokanResult.SharingViolation;
+                        default:
+                            throw;
+                    }
+                }
 
                 if (mode == FileMode.CreateNew || mode == FileMode.Create) // files are always created as Archive
                 {
@@ -285,8 +313,9 @@ namespace dokan_layfs
                 if (info.DeleteOnClose)
                 {
                     context.Delete();
-                    context.Dispose();
                 }
+
+                context.Dispose();
             }
         }
 
@@ -314,15 +343,18 @@ namespace dokan_layfs
 
         public NtStatus DeleteFile(string fileName, DokanFileInfo info)
         {
-            LayeredFileContext context = info.Context as LayeredFileContext;
+            return DokanResult.Success;
+            /*
+            LayeredContext context = info.Context as LayeredContext;
             if (!context.IsWritable)
             {
                 return DokanResult.AccessDenied;
             }
             else
             {
-                return DokanResult.Success;
+                return DokanResult.Success;  
             }
+            */
         }
 
         public NtStatus FindFiles(string fileName, out IList<FileInformation> files, DokanFileInfo info)
@@ -364,15 +396,7 @@ namespace dokan_layfs
                 }
             }
 
-            files = list.Values.Select(finfo => new FileInformation
-            {
-                Attributes = finfo.Attributes,
-                CreationTime = finfo.CreationTime,
-                LastAccessTime = finfo.LastAccessTime,
-                LastWriteTime = finfo.LastWriteTime,
-                Length = (finfo as FileInfo)?.Length ?? 0,
-                FileName = finfo.Name
-            }).ToArray();
+            files = list.Values.Select(fsinfo => Utils.CreateFileInformation(fsinfo)).ToArray();
 
             return DokanResult.Success;
         }
@@ -417,7 +441,8 @@ namespace dokan_layfs
             else
             {
                 fileInfo = context.GetFileInformation();
-                fileInfo.FileName = Path.GetFileName(fileName);
+                // fileInfo.FileName = Path.GetFileName(fileName);
+                fileInfo.FileName = fileName;
                 return DokanResult.Success;
             }
         }
@@ -428,7 +453,7 @@ namespace dokan_layfs
 
             LayeredContext context = info.Context as LayeredContext;
 
-            if (context != null)
+            if (context == null)
             {
                 return DokanResult.InvalidHandle;
             }
@@ -459,10 +484,16 @@ namespace dokan_layfs
 
         public NtStatus LockFile(string fileName, long offset, long length, DokanFileInfo info)
         {
+            var context = info.Context as LayeredFileContext;
+            if(context == null)
+            {
+                return DokanResult.InvalidHandle;
+            }
+
             try
             {
-                MakeWriteable(info.Context as LayeredFileContext);
-                (info.Context as LayeredFileContext).Stream.Lock(offset, length);
+                // context.MakeWritable();
+                context.Stream.Lock(offset, length);
                 return DokanResult.Success;
             }
             catch (IOException)
@@ -514,11 +545,15 @@ namespace dokan_layfs
             }
 
             var stream = (info.Context as LayeredFileContext).Stream;
-            stream.Seek(offset, SeekOrigin.Begin);
+            
 
             try
             {
-                bytesRead = stream.Read(buffer, 0, buffer.Length);
+                lock(stream)
+                {
+                    stream.Position =offset;
+                    bytesRead = stream.Read(buffer, 0, buffer.Length);
+                }
             }
             catch (Exception)
             {
@@ -528,7 +563,8 @@ namespace dokan_layfs
             return DokanResult.Success;
         }
 
-        public void MakeWriteable(LayeredFileContext context)
+/*
+        public void MakeWritable(LayeredFileContext context)
         {
             if(!context.IsWritable)
             {
@@ -537,10 +573,13 @@ namespace dokan_layfs
                     Directory.CreateDirectory(path);
 
                 path = GetWritePath(context.FileName);
+                var readOnlyPath = GetReadOnlyPath(context.FileName);
+
+                var fileInfo = context.GetFileInformation();
 
                 context.Stream.Dispose();
 
-                File.Copy(GetReadOnlyPath(context.FileName), path, true);
+                File.Copy(readOnlyPath, path, true);
 
                 context.Stream = new FileStream(
                     path,
@@ -548,13 +587,15 @@ namespace dokan_layfs
                     System.IO.FileAccess.ReadWrite,
                     FileShare.Read | FileShare.Write | FileShare.Delete,
                     4096, 0);
+
             }
         }
+*/
 
         public NtStatus SetAllocationSize(string fileName, long length, DokanFileInfo info)
         {
             var context = info.Context as LayeredFileContext;
-            MakeWriteable(context);
+            // context.MakeWritable();
             context.Stream.SetLength(length);
             return DokanResult.Success;           
         }
@@ -562,7 +603,7 @@ namespace dokan_layfs
         public NtStatus SetEndOfFile(string fileName, long length, DokanFileInfo info)
         {
             var context = info.Context as LayeredFileContext;
-            MakeWriteable(context);
+            // context.MakeWritable();
             context.Stream.SetLength(length);
             return DokanResult.Success;
         }
@@ -631,13 +672,16 @@ namespace dokan_layfs
 
             try
             {
-                MakeWriteable(context);
-                context.Stream.Position = offset;
-                context.Stream.Write(buffer, 0, buffer.Length);
+                // context.MakeWritable();
+                lock(context.Stream)
+                {
+                    context.Stream.Position = offset;
+                    context.Stream.Write(buffer, 0, buffer.Length);
+                }
                 bytesWritten = buffer.Length;
                 return DokanResult.Success;
             }
-            catch(IOException)
+            catch(IOException ex)
             {
                 return DokanResult.AccessDenied;
             }

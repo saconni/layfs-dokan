@@ -20,6 +20,8 @@ namespace dokan_layfs
             _isDirectory = isDirectory;
         }
 
+        public override bool IsWritable { get => false; }
+
         public override void Delete()
         {
             throw new NotImplementedException();
@@ -42,15 +44,7 @@ namespace dokan_layfs
                 finfo = new FileInfo(_realPath);
             }
 
-            var fileInfo = new FileInformation
-            {
-                FileName = FileName,
-                Attributes = finfo.Attributes,
-                CreationTime = finfo.CreationTime,
-                LastAccessTime = finfo.LastAccessTime,
-                LastWriteTime = finfo.LastWriteTime,
-                Length = (finfo as FileInfo)?.Length ?? 0,
-            };
+            var fileInfo = Utils.CreateFileInformation(finfo);
 
             return fileInfo;
         }
@@ -64,7 +58,8 @@ namespace dokan_layfs
 
         public override void SetAttributes(FileAttributes attributes)
         {
-            throw new NotImplementedException();
+            if (attributes != 0)
+                File.SetAttributes(_realPath, attributes);
         }
 
         public override void SetFileSystemSecurity(FileSystemSecurity security)

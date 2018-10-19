@@ -11,7 +11,7 @@ namespace dokan_layfs
 {
     class LayeredDirectoryContext : LayeredContext
     {
-        public bool IsWritable
+        public override bool IsWritable
         {
             get
             {
@@ -42,8 +42,7 @@ namespace dokan_layfs
 
         public override FileInformation GetFileInformation()
         {
-            FileInformation info = new FileInformation();
-            Utils.CreateFileInformationFromFileSystemInfo(WriteDirInfo ?? ReadOnlyDirInfo, out info);
+            FileInformation info = Utils.CreateFileInformation(WriteDirInfo ?? ReadOnlyDirInfo);
             return info;
         }
 

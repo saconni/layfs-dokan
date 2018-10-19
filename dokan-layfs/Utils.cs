@@ -136,22 +136,23 @@ namespace dokan_layfs
             fileInfo = new FileInformation()
             {
                 Attributes = (FileAttributes)info.dwFileAttributes,
-                CreationTime = DateTime.FromFileTimeUtc((long)info.ftCreationTime),
-                LastAccessTime = DateTime.FromFileTimeUtc((long)info.ftLastAccessTime),
-                LastWriteTime = DateTime.FromFileTimeUtc((long)info.ftLastWriteTime),
+                CreationTime = DateTime.FromFileTime((long)info.ftCreationTime),
+                LastAccessTime = DateTime.FromFileTime((long)info.ftLastAccessTime),
+                LastWriteTime = DateTime.FromFileTime((long)info.ftLastWriteTime),
                 Length = info.nFileSizeHigh << 32 | info.nFileSizeLow
             };
         }
 
-        public static void CreateFileInformationFromFileSystemInfo(FileSystemInfo fsinfo, out FileInformation fileInfo)
+        public static FileInformation CreateFileInformation(FileSystemInfo fsinfo)
         {
-            fileInfo = new FileInformation()
+            return new FileInformation()
             {
+                FileName = fsinfo.Name,
                 Attributes = fsinfo.Attributes,
                 CreationTime = fsinfo.CreationTimeUtc,
                 LastAccessTime = fsinfo.LastAccessTimeUtc,
                 LastWriteTime = fsinfo.LastWriteTimeUtc,
-                Length = 0
+                Length = (fsinfo as FileInfo)?.Length ?? 0
             };
         }
     }
